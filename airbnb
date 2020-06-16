@@ -1,0 +1,107 @@
+import gdown
+import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+import pandas as pd
+import seaborn as sns
+from pylab import rcParams
+import matplotlib.pyplot as plt
+from matplotlib import rc
+from sklearn.model_selection import train_test_split
+import joblib
+from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
+from sklearn.compose import make_column_transformer
+
+
+
+#tf.Session(config=tf.ConfigProto(allow_growth=True))
+
+sns.set(style = 'whitegrid', palette = 'muted', font_scale = 1.5)
+
+rcParams['figure.figsize'] = 16, 10
+RANDOM_SEED = 42
+
+#!gdown --id 1aRXGcJlIkuC6uj1iLqzi9DQQS-3GPwM_ --output airbnb_nyc.csv
+
+df = pd.read_csv('airbnb_nyc.csv')
+sns.distplot(df.price)
+sns.distplot(np.log1p(df.price))
+a1 = sns.countplot(x = 'room_type', data = df)
+
+
+sns.countplot(x = 'neighbourhood_group', data = df)
+sns.distplot(df.number_of_reviews)
+
+
+missing = df.isnull().sum()
+missing[missing > 0].sort_values(ascending = False)
+
+df = df.drop(['id', 'name', 'host_id', 'host_name', 'reviews_per_month', 'last_review', 'neighbourhood'], axis = 1)
+
+X = df.drop('price', axis = 1)
+
+y = np.log1p(df.price.values)
+
+data = [['Manhattan'], ['Brooklyn']]
+
+OneHotEncoder(sparse = False).fit_transform(data)
+
+transformer = make_column_transformer(
+    (MinMaxScaler(), ['latitude', 'longitude', 'minimum_nights', 'number_of_reviews', 'calculated_host_listings_count',
+                      'availability_365']),
+    (OneHotEncoder(handle_unknown="ignore"), ['neighbourhood_group', 'room_type'])
+)
+
+transformer.fit(X)
+X = transformer.transform(X)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=RANDOM_SEED)
+#print(X_train.shape)
+
+def plot_mse(history):
+  hist = pd.DataFrame(history.history)
+  hist['epoch'] = history.epoch
+
+  plt.figure()
+  plt.xlabel('Epoch')
+  plt.ylabel('MSE')
+  plt.plot(hist['epoch'], hist['mse'],
+            label='Train MSE')
+  plt.plot(hist['epoch'], hist['val_mse'],
+            label = 'Val MSE')
+  plt.legend()
+  plt.show()
+
+
+model = keras.Sequential()
+model.add(keras.layers.Dense(units=64, activation="relu", input_shape=[X_train.shape[1]]))
+model.add(keras.layers.Dropout(rate=0.3))
+model.add(keras.layers.Dense(units=32, activation="relu"))
+model.add(keras.layers.Dropout(rate=0.5))
+
+model.add(keras.layers.Dense(1))
+
+model.compile(
+  optimizer=keras.optimizers.Adam(0.0001),
+  loss='mse',
+  metrics=['mse'])
+
+BATCH_SIZE = 32
+
+early_stop = keras.callbacks.EarlyStopping(
+  monitor='val_mse',
+  mode="min",
+  patience=10
+)
+
+history = model.fit(
+  x=X_train,
+  y=y_train,
+  shuffle=True,
+  epochs=100,
+  validation_split=0.2,
+  batch_size=BATCH_SIZE,
+  callbacks=[early_stop]
+)
+
+plot_mse(history)
+plt.show()
